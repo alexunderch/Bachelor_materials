@@ -1,0 +1,6 @@
+Log file created at: 2019/04/06 22:26:24
+Running on machine: hp-250-g5-notebook-pc
+Log line format: [IWEF]mmdd hh:mm:ss.uuuuuu threadid file:line] msg
+W0406 22:26:24.055954 11794 check_messages.h:1121] Inconsistent fields size in ThetaMatrix: 1728 vs 0 vs 1728 vs 0;
+W0406 22:26:30.288506 11794 check_messages.h:1121] Inconsistent fields size in ThetaMatrix: 1728 vs 0 vs 1728 vs 0;
+W0406 22:27:34.285982 11794 check_messages.h:1121] Inconsistent fields size in ThetaMatrix: 1728 vs 0 vs 1728 vs 0;
