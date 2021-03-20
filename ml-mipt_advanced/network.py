@@ -1,3 +1,7 @@
+import torch
+from torch import nn
+import torch.nn.functional as F
+
 class ThreeInputsNet(nn.Module):
     def __init__(self, n_tokens, n_cat_features, concat_number_of_features, hid_size = 64):
         super(ThreeInputsNet, self).__init__()
