@@ -10,7 +10,7 @@ import random
 import math
 import time
 
-from transformers import BertTokenizer, BertModel   
+# from transformers import BertTokenizer, BertModel   
 
 class Encoder(nn.Module):
     def __init__(self, input_dim, emb_dim, hid_dim, n_layers, dropout, bidirectional):
@@ -125,7 +125,7 @@ class Decoder(nn.Module):
         
         # Compute an embedding from the input data and apply dropout to it
         embedded = self.dropout(self.embedding(encoded_input))# <YOUR CODE HERE>
-        attn_scores, _  = self.encoder_attention(embeded, 
+        attn_scores, _  = self.encoder_attention(embedded, 
                                         encoder_outputs, 
                                         encoder_outputs)
         #embedded = [1, batch size, emb dim]
