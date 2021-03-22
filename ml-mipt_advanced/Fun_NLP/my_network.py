@@ -100,7 +100,7 @@ class Decoder(nn.Module):
             input_size = emb_dim,
             hidden_size = hid_dim,
             num_layers = n_layers,
-            dropout = dropout
+            dropout = dropout,
             bidirectional = bidirectional)
         
         self.out = nn.Linear(
