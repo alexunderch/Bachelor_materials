@@ -2,10 +2,6 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-import torchtext
-from torchtext.datasets import TranslationDataset, Multi30k
-from torchtext.data import Field, BucketIterator
-
 import random
 import math
 import time
@@ -22,9 +18,18 @@ class Encoder(nn.Module):
         self.n_layers = n_layers
         self.dropout = dropout
         
+        ####CNN ENCODER SHOULD BE HERE####
         self.embedding = nn.Embedding(
             num_embeddings = input_dim,
             embedding_dim = emb_dim)
+
+        self.conv1 = nn.Conv1d(in_channels = emb_dim, out_channels = 2 * emb_dim, kernel_size = 3, padding = 1)
+        self.relu1 = nn.ReLU()
+        self.dropout1 = nn.Dropout(dropout)
+        self.bn1 = nn.BatchNorm1d(3 * hid_size)
+        self.amp = nn.AdaptiveMaxPool1d(4)      
+
+        self.self_attention = nn.MultiheadAttention(emb_dim, 2)
 
         self.rnn = nn.LSTM(
             input_size = emb_dim,
@@ -41,9 +46,12 @@ class Encoder(nn.Module):
         
         # Compute an embedding from the src data and apply dropout to it
         embedded = self.embedding(src)# <YOUR CODE HERE>
+        embedded = self.conv1(embedded)
+        embedded = self.relu1(embedded)
+        embedded = self.dropout1(embedded)
 
-        embedded = self.dropout(embedded)
-        
+        print(embedded.shape)
+
         output, (hidden, cell) = self.rnn(embedded)
         #embedded = [src sent len, batch size, emb dim]
         
@@ -94,13 +102,13 @@ class Decoder(nn.Module):
             num_embeddings = output_dim,
             embedding_dim = emb_dim)
         
-        self.encoder_attention = nn.MultiheadAttention(emb_dim, 1)
+        self.encoder_attention = nn.MultiheadAttention(emb_dim, 4)
 
         self.rnn = nn.LSTM(
             input_size = emb_dim,
             hidden_size = hid_dim,
             num_layers = n_layers,
-            dropout = dropout,
+            dropout = dropout
             bidirectional = bidirectional)
         
         self.out = nn.Linear(
@@ -125,7 +133,7 @@ class Decoder(nn.Module):
         
         # Compute an embedding from the input data and apply dropout to it
         embedded = self.dropout(self.embedding(encoded_input))# <YOUR CODE HERE>
-        attn_scores, _  = self.encoder_attention(embedded, 
+        attn_scores, _  = self.encoder_attention(embeded, 
                                         encoder_outputs, 
                                         encoder_outputs)
         #embedded = [1, batch size, emb dim]
@@ -182,14 +190,14 @@ class Seq2Seq(nn.Module):
         outputs = torch.zeros(max_len, batch_size, trg_vocab_size).to(self.device)
         
         #last hidden state of the encoder is used as the initial hidden state of the decoder
-        encoder_outputs, hidden, cell = self.encoder(src)
+        hidden, cell = self.encoder(src)
         
         #first input to the decoder is the <sos> tokens
-        _input = trg[0, :]
+        input = trg[0, :]
         
         for t in range(1, max_len):
             
-            output, hidden, cell = self.decoder(_input, hidden, cell, encoder_outputs)
+            output, hidden, cell = self.decoder(input, hidden, cell)
             outputs[t] = output
             teacher_force = random.random() < teacher_forcing_ratio
             top1 = output.max(1)[1]
