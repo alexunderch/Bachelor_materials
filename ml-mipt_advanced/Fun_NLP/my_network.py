@@ -23,7 +23,7 @@ class Encoder(nn.Module):
             num_embeddings = input_dim,
             embedding_dim = emb_dim)
 
-        self.conv1 = nn.Conv1d(in_channels = emb_dim, out_channels = emb_dim, kernel_size = 3, padding = 1)
+        self.conv1 = nn.Conv1d(in_channels = emb_dim, out_channels = emb_dim, kernel_size = 2, padding = 1)
         self.relu1 = nn.Tanh()
         self.dropout1 = nn.Dropout(dropout)
         self.bn1 = nn.BatchNorm1d(emb_dim)
@@ -158,8 +158,8 @@ class Decoder(nn.Module):
         
         output, (hidden, cell) = self.rnn(self.relu1(attn_scores), (hidden, cell))
         attn_scores, _  = self.encoder_attention2(output, 
-                                                  encoder_outputs, 
-                                                  encoder_outputs)
+                                                  output, 
+                                                  output)
         prediction = self.out(self.relu2(attn_scores).squeeze(0))
         
         #prediction = [batch size, output dim]
@@ -180,7 +180,7 @@ class Seq2Seq(nn.Module):
         assert encoder.n_layers == decoder.n_layers, \
             "Encoder and decoder must have equal number of layers!"
         
-    def forward(self, src, trg, teacher_forcing_ratio = 0.5):
+    def forward(self, src, trg, teacher_forcing_ratio = 0.67):
         
         #src = [src sent len, batch size]
         #trg = [trg sent len, batch size]
@@ -207,6 +207,6 @@ class Seq2Seq(nn.Module):
             outputs[t] = output
             teacher_force = random.random() < teacher_forcing_ratio
             top1 = output.max(1)[1]
-            input = (trg[t] if teacher_force else top1)
+            _input = (trg[t] if teacher_force else top1)
         
         return outputs
