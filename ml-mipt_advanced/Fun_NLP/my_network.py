@@ -24,13 +24,13 @@ class Encoder(nn.Module):
             embedding_dim = emb_dim)
 
         self.conv1 = nn.Conv1d(in_channels = emb_dim, out_channels = emb_dim, kernel_size = 3, padding = 1)
-        self.relu1 = nn.ReLU()
+        self.relu1 = nn.Tanh()
         self.dropout1 = nn.Dropout(dropout)
         self.bn1 = nn.BatchNorm1d(emb_dim)
         self.amp = nn.AdaptiveMaxPool1d(2)      
 
         self.self_attention = nn.MultiheadAttention(emb_dim, 2)
-
+        self.relu2 = nn.LeakyReLU()
         self.rnn = nn.LSTM(
             input_size = emb_dim,
             hidden_size = hid_dim,
@@ -50,8 +50,10 @@ class Encoder(nn.Module):
         embedded = self.relu1(embedded)
         embedded = self.dropout1(embedded)
 
-
-        output, (hidden, cell) = self.rnn(embedded.transpose(1, 2))
+        attn_scores, _ = self.self_attention(embedded.transpose(1, 2),
+                                             embedded.transpose(1, 2),
+                                            embedded.transpose(1, 2)) 
+        output, (hidden, cell) = self.rnn(self.relu2(attn_scores))
         #embedded = [src sent len, batch size, emb dim]
         
         # Compute the RNN output values of the encoder RNN. 
@@ -101,15 +103,17 @@ class Decoder(nn.Module):
             num_embeddings = output_dim,
             embedding_dim = emb_dim)
         
-        self.encoder_attention = nn.MultiheadAttention(emb_dim, 4)
-
+        self.encoder_attention1 = nn.MultiheadAttention(emb_dim, 2)
+        self.relu1 = nn.LeakyReLU()
         self.rnn = nn.LSTM(
             input_size = emb_dim,
             hidden_size = hid_dim,
             num_layers = n_layers,
             dropout = dropout,
             bidirectional = bidirectional)
-        
+
+        self.encoder_attention2 = nn.MultiheadAttention(hid_dim, 2)
+        self.relu2 = nn.LeakyReLU()
         self.out = nn.Linear(
             in_features = hid_dim,
             out_features = output_dim)
@@ -132,7 +136,7 @@ class Decoder(nn.Module):
         
         # Compute an embedding from the input data and apply dropout to it
         embedded = self.dropout(self.embedding(encoded_input))# <YOUR CODE HERE>
-        attn_scores, _  = self.encoder_attention(embedded, 
+        attn_scores, _  = self.encoder_attention1(embedded, 
                                         encoder_outputs, 
                                         encoder_outputs)
         #embedded = [1, batch size, emb dim]
@@ -152,8 +156,11 @@ class Decoder(nn.Module):
         #cell = [n layers, batch size, hid dim]
         
         
-        output, (hidden, cell) = self.rnn(attn_scores, (hidden, cell))
-        prediction = self.out(output.squeeze(0))
+        output, (hidden, cell) = self.rnn(self.relu1(attn_scores), (hidden, cell))
+        attn_scores, _  = self.encoder_attention2(output, 
+                                                  encoder_outputs, 
+                                                  encoder_outputs)
+        prediction = self.out(self.relu2(attn_scores).squeeze(0))
         
         #prediction = [batch size, output dim]
         
