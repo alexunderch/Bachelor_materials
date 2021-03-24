@@ -23,11 +23,11 @@ class Encoder(nn.Module):
             num_embeddings = input_dim,
             embedding_dim = emb_dim)
 
-        self.conv1 = nn.Conv1d(in_channels = emb_dim, out_channels = 2 * emb_dim, kernel_size = 3, padding = 1)
+        self.conv1 = nn.Conv1d(in_channels = emb_dim, out_channels = emb_dim, kernel_size = 3, padding = 1)
         self.relu1 = nn.ReLU()
         self.dropout1 = nn.Dropout(dropout)
-        self.bn1 = nn.BatchNorm1d(3 * hid_size)
-        self.amp = nn.AdaptiveMaxPool1d(4)      
+        self.bn1 = nn.BatchNorm1d(emb_dim)
+        self.amp = nn.AdaptiveMaxPool1d(2)      
 
         self.self_attention = nn.MultiheadAttention(emb_dim, 2)
 
@@ -46,13 +46,12 @@ class Encoder(nn.Module):
         
         # Compute an embedding from the src data and apply dropout to it
         embedded = self.embedding(src)# <YOUR CODE HERE>
-        embedded = self.conv1(embedded)
+        embedded = self.conv1(embedded.transpose(1, 2))
         embedded = self.relu1(embedded)
         embedded = self.dropout1(embedded)
 
-        print(embedded.shape)
 
-        output, (hidden, cell) = self.rnn(embedded)
+        output, (hidden, cell) = self.rnn(embedded.transpose(1, 2))
         #embedded = [src sent len, batch size, emb dim]
         
         # Compute the RNN output values of the encoder RNN. 
@@ -108,7 +107,7 @@ class Decoder(nn.Module):
             input_size = emb_dim,
             hidden_size = hid_dim,
             num_layers = n_layers,
-            dropout = dropout
+            dropout = dropout,
             bidirectional = bidirectional)
         
         self.out = nn.Linear(
@@ -133,7 +132,7 @@ class Decoder(nn.Module):
         
         # Compute an embedding from the input data and apply dropout to it
         embedded = self.dropout(self.embedding(encoded_input))# <YOUR CODE HERE>
-        attn_scores, _  = self.encoder_attention(embeded, 
+        attn_scores, _  = self.encoder_attention(embedded, 
                                         encoder_outputs, 
                                         encoder_outputs)
         #embedded = [1, batch size, emb dim]
@@ -190,14 +189,14 @@ class Seq2Seq(nn.Module):
         outputs = torch.zeros(max_len, batch_size, trg_vocab_size).to(self.device)
         
         #last hidden state of the encoder is used as the initial hidden state of the decoder
-        hidden, cell = self.encoder(src)
+        enc_outputs, hidden, cell = self.encoder(src)
         
         #first input to the decoder is the <sos> tokens
-        input = trg[0, :]
+        _input = trg[0, :]
         
         for t in range(1, max_len):
             
-            output, hidden, cell = self.decoder(input, hidden, cell)
+            output, hidden, cell = self.decoder(_input, hidden, cell, enc_outputs)
             outputs[t] = output
             teacher_force = random.random() < teacher_forcing_ratio
             top1 = output.max(1)[1]
