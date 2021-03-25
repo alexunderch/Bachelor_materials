@@ -67,28 +67,6 @@ class Encoder(nn.Module):
         
         return output, hidden, cell
 
-# class Encoder(nn.Module):
-#     def __init__(self):
-#         """
-#         """
-#         super(type(self), self).__init__()
-        
-#         self.model = BertModel.from_pretrained('bert-base-uncased')
-#         self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-
-#     def forward(self, text: list, max_length = 512, truncate = True, use_padding = True):
-#         """
-#         """
-#         with torch.no_grad():
-#             encoded_input = self.tokenizer(text, return_tensors = 'pt', max_length = max_length,
-#                                       truncation = truncate, padding = 'max_length')
-#         input_ids = encoded_input['input_ids']
-#         attention_mask = encoded_input['attention_mask']
-
-#         embeddings = self.model(input_ids, attention_mask = attention_mask, output_hidden_states = True)
-#         return embeddings.hidden_states # 13 (batch_size, sequence_length, hidden_size)
-
-
 class Decoder(nn.Module):
     def __init__(self, output_dim, emb_dim, hid_dim, n_layers, dropout, bidirectional):
         super().__init__()
