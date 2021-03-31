@@ -4,6 +4,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 import random
 import math
+import numpy as np
 import time
 
 def scaled_dot_product(q, k, v, mask = None):
@@ -132,8 +133,7 @@ class Decoder(nn.Module):
             input_size = emb_dim,
             hidden_size = hid_dim,
             num_layers = n_layers,
-            dropout = dropout,
-            bidirectional = False)
+            dropout = dropout)
 
         self.relu2 = nn.ReLU()
         self.out = nn.Linear(
@@ -251,18 +251,19 @@ class Encoder_CNN(nn.Module):
         self.n_layers = n_layers
         self.embedding = nn.Embedding(input_dim, emb_dim)
 
-        self.s_conv_block = [nn.Conv1d(emb_dim, hid_dim, kernel_size, stride, padding),
+        self.s_conv_block = [nn.Conv1d(emb_dim, hid_dim, kernel_size, padding = kernel_size // 2),
                                           nn.BatchNorm1d(hid_dim),
                                           nn.Dropout(dropout),
-                                          # nn.MaxPool1d(kernel_size),
+                                          # nn.AvgPool1d(kernel_size),
                                           nn.ReLU()]
-        self.c_conv_block = [nn.Conv1d(hid_dim, hid_dim, kernel_size, stride, padding),
+        self.c_conv_block = [nn.Conv1d(hid_dim, hid_dim, kernel_size, padding = kernel_size // 2),
                                           nn.BatchNorm1d(hid_dim),
                                           nn.Dropout(dropout),
+                                          # nn.AvgPool1d(kernel_size),
                                           nn.ReLU()]
         modules = self.s_conv_block
         for _ in range(n_layers - 1): modules.extend(self.c_conv_block)
-        self.conv_net = nn.Sequential(*modules)
+        self.conv_net = nn.ModuleList(modules)
         self.relu = nn.ReLU()
 
         if output_dim is not None: self.lin_out = nn.Linear(hid_dim, output_dim)
@@ -279,14 +280,12 @@ class Encoder_CNN(nn.Module):
         if self.use_pos_encoding:
             pos_encoding_emb = torch.zeros([src.shape[1], src.shape[0], self.emb_dim], dtype = torch.float).to(self.device)
             pos_encoding_emb = positional_encoding(src.shape[0], self.emb_dim, self.device)
-            embedded += pos_encoding_emb.permute(1, 0, 2)
+            embedded = embedded + pos_encoding_emb.permute(1, 0, 2)
 
         embedded = embedded.permute((1, 2, 0))
-
-        output = embedded
-        output = self.relu(self.conv_net(output) )
-
-        output = self.flatten(self.ot_pooling(output))
+        
+        for  layer in self.conv_net: embedded = self.relu(layer(embedded) + embedded)
+        output = self.flatten(self.ot_pooling(embedded))
         if self.lin_out: output = self.lin_out(output)
         return output  
 
@@ -323,7 +322,7 @@ class CNN2Seq(nn.Module):
         enc_output = self.encoder(src)
         
         #first input to the decoder is the <sos> tokens
-        _input = trg[0,:]
+        _input = trg[0, :]
               
         for t in range(1, max_len):
             if t == 1:
@@ -337,3 +336,73 @@ class CNN2Seq(nn.Module):
             input = (trg[t] if teacher_force else top1)
         
         return outputs
+
+class Decoder_(nn.Module):
+    def __init__(self, output_dim, emb_dim, hid_dim, n_layers, dropout):
+        super().__init__()
+
+        self.emb_dim = emb_dim
+        self.hid_dim = hid_dim
+        self.output_dim = output_dim
+        self.n_layers = n_layers
+        self.dropout = dropout
+        
+        self.embedding = nn.Embedding(
+            num_embeddings=output_dim,
+            embedding_dim=emb_dim
+        )
+            # <YOUR CODE HERE>
+        
+        self.rnn = nn.LSTM(
+            input_size=emb_dim,
+            hidden_size=hid_dim,
+            num_layers=n_layers,
+            dropout=dropout
+        )
+            # <YOUR CODE HERE>
+        
+        self.out = nn.Linear(
+            in_features=hid_dim,
+            out_features=output_dim
+        )
+        
+        self.dropout = nn.Dropout(p=dropout)# <YOUR CODE HERE>
+        
+    def forward(self, input, hidden, cell):
+        
+        #input = [batch size]
+        #hidden = [n layers * n directions, batch size, hid dim]
+        #cell = [n layers * n directions, batch size, hid dim]
+        
+        #n directions in the decoder will both always be 1, therefore:
+        #hidden = [n layers, batch size, hid dim]
+        #context = [n layers, batch size, hid dim]
+        
+        input = input.unsqueeze(0)
+        
+        #input = [1, batch size]
+        
+        # Compute an embedding from the input data and apply dropout to it
+        embedded = self.dropout(self.embedding(input))# <YOUR CODE HERE>
+        
+        #embedded = [1, batch size, emb dim]
+        
+        # Compute the RNN output values of the encoder RNN. 
+        # outputs, hidden and cell should be initialized here. Refer to nn.LSTM docs ;)
+        
+        #output = [sent len, batch size, hid dim * n directions]
+        #hidden = [n layers * n directions, batch size, hid dim]
+        #cell = [n layers * n directions, batch size, hid dim]
+        
+        #sent len and n directions will always be 1 in the decoder, therefore:
+        #output = [1, batch size, hid dim]
+        #hidden = [n layers, batch size, hid dim]
+        #cell = [n layers, batch size, hid dim]
+        
+        
+        output, (hidden, cell) = self.rnn(embedded, (hidden, cell))
+        prediction = self.out(output.squeeze(0))
+        
+        #prediction = [batch size, output dim]
+        
+        return prediction, hidden, cell
