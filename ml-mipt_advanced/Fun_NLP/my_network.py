@@ -181,7 +181,7 @@ class Decoder(nn.Module):
         output, (hidden, cell) = self.rnn(embedded, (hidden, cell)) 
         output =  output + self.dropout2(self.encoder_attention(output.transpose(0, 1), 
                                                                 encoder_outputs.transpose(0, 1)).transpose(0, 1))
-        output = self.norm1(output)
+#         output = self.norm1(output)
         prediction = self.out(output.squeeze(0))
         
         #prediction = [batch size, output dim]
