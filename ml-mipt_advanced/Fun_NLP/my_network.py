@@ -231,3 +231,111 @@ class Seq2Seq(nn.Module):
             _input = (trg[t] if teacher_force else top1)
         
         return outputs
+
+def positional_encoding(position, d_model, device):
+    angles = np.arange(position)[:, None] *  1. / np.power(10000, (2 * (np.arange(d_model)[None, :] // 2)) / np.float32(d_model)) 
+    angles[:, 0::2] = np.sin(angles[:, 0::2])
+    angles[:, 1::2] = np.cos(angles[:, 1::2])
+    return torch.FloatTensor(angles).unsqueeze(0).to(device)
+
+class Encoder_CNN(nn.Module):
+    def __init__(self, device, input_dim, emb_dim, hid_dim, output_dim, use_pos_encoding: bool, 
+                 kernel_size: int, stride: int, padding: int, n_layers: int, 
+                 dropout: float, use_batchnorm: bool ):
+        super(type(self), self).__init__()
+        self.input_dim = input_dim
+        self.emb_dim = emb_dim
+        self.hid_dim = hid_dim
+        self.output_dim = output_dim
+        self.use_batchnorm = use_batchnorm
+        self.device = device
+        self.use_pos_encoding = use_pos_encoding
+        self.n_layers = n_layers
+        self.embedding = nn.Embedding(input_dim, emb_dim)
+
+        self.s_conv_block = [nn.Conv1d(emb_dim, hid_dim, kernel_size, stride, padding),
+                                          nn.BatchNorm1d(hid_dim),
+                                          nn.Dropout(dropout),
+                                          # nn.MaxPool1d(kernel_size),
+                                          nn.ReLU()]
+        self.c_conv_block = [nn.Conv1d(hid_dim, hid_dim, kernel_size, stride, padding),
+                                          nn.BatchNorm1d(hid_dim),
+                                          nn.Dropout(dropout),
+                                          nn.ReLU()]
+        modules = self.s_conv_block
+        for _ in range(n_layers - 1): modules.extend(self.c_conv_block)
+        self.conv_net = nn.Sequential(*modules)
+        self.relu = nn.ReLU()
+
+        if output_dim is not None: self.lin_out = nn.Linear(hid_dim, output_dim)
+        else:
+            self.lin_out = None
+            self.output_dim = hid_dim
+        
+        self.dropout = nn.Dropout(dropout)
+        self.ot_pooling = nn.AdaptiveMaxPool1d(1)
+        self.flatten = torch.nn.Flatten()
+
+    def forward(self, src):
+        embedded = self.embedding(src)         
+        if self.use_pos_encoding:
+            pos_encoding_emb = torch.zeros([src.shape[1], src.shape[0], self.emb_dim], dtype = torch.float).to(self.device)
+            pos_encoding_emb = positional_encoding(src.shape[0], self.emb_dim, self.device)
+            embedded += pos_encoding_emb.permute(1, 0, 2)
+
+        embedded = embedded.permute((1, 2, 0))
+
+        output = embedded
+        output = self.relu(self.conv_net(output) )
+
+        output = self.flatten(self.ot_pooling(output))
+        if self.lin_out: output = self.lin_out(output)
+        return output  
+
+class CNN2Seq(nn.Module):
+    def __init__(self, encoder, decoder, device):
+        super().__init__()
+        
+        self.encoder = encoder
+        self.decoder = decoder
+        self.device = device
+        
+        # assert encoder.hid_dim == decoder.hid_dim, \
+        #     "Hidden dimensions of encoder and decoder must be equal!"
+        # assert encoder.n_layers == decoder.n_layers, \
+        #     "Encoder and decoder must have equal number of layers!"
+        
+    def forward(self, src, trg, teacher_forcing_ratio = 0.5):
+        
+        #src = [src sent len, batch size]
+        #trg = [trg sent len, batch size]
+        #teacher_forcing_ratio is probability to use teacher forcing
+        #e.g. if teacher_forcing_ratio is 0.75 we use ground-truth inputs 75% of the time
+        
+        # Again, now batch is the first dimention instead of zero
+        batch_size = trg.shape[1]
+        max_len = trg.shape[0]
+        trg_vocab_size = self.decoder.output_dim
+        dec_hid_size = self.decoder.hid_dim
+        
+        #tensor to store decoder outputs
+        outputs = torch.zeros(max_len, batch_size, trg_vocab_size).to(self.device)
+        
+        #last hidden state of the encoder is used as the initial hidden state of the decoder
+        enc_output = self.encoder(src)
+        
+        #first input to the decoder is the <sos> tokens
+        _input = trg[0,:]
+              
+        for t in range(1, max_len):
+            if t == 1:
+                output, hidden, cell = self.decoder(_input,
+                                            enc_output[:, :self.decoder.n_layers * dec_hid_size].contiguous().view(self.decoder.n_layers, batch_size, dec_hid_size),
+                                            enc_output[:, self.decoder.n_layers * dec_hid_size:].contiguous().view(self.decoder.n_layers, batch_size, dec_hid_size))
+            else: output, hidden, cell = self.decoder(_input, hidden, cell)
+            outputs[t] = output
+            teacher_force = random.random() < teacher_forcing_ratio
+            top1 = output.max(1)[1]
+            input = (trg[t] if teacher_force else top1)
+        
+        return outputs
