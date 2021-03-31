@@ -58,7 +58,7 @@ class MultiheadAttention(nn.Module):
         return out
 
 class Encoder(nn.Module):
-    def __init__(self, input_dim, emb_dim, hid_dim, n_layers, dropout, bidirectional):
+    def __init__(self, input_dim, emb_dim, hid_dim, n_layers, dropout):
         super().__init__()
         
         self.input_dim = input_dim
@@ -79,8 +79,7 @@ class Encoder(nn.Module):
             input_size = emb_dim,
             hidden_size = hid_dim,
             num_layers = n_layers,
-            dropout = dropout,
-            bidirectional = bidirectional)
+            dropout = dropout)
         
         self.norm1 = nn.LayerNorm(emb_dim)
         self.dropout = nn.Dropout(p = dropout)
@@ -111,7 +110,7 @@ class Encoder(nn.Module):
         return output, hidden, cell
 
 class Decoder(nn.Module):
-    def __init__(self, output_dim, emb_dim, hid_dim, n_layers, dropout, bidirectional):
+    def __init__(self, output_dim, emb_dim, hid_dim, n_layers, dropout):
         super().__init__()
 
         self.emb_dim = emb_dim
