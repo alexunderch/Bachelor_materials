@@ -240,13 +240,12 @@ def positional_encoding(position, d_model, device):
 class Encoder_CNN(nn.Module):
     def __init__(self, device, input_dim, emb_dim, hid_dim, output_dim, use_pos_encoding: bool, 
                  kernel_size: int, stride: int, padding: int, n_layers: int, 
-                 dropout: float, use_batchnorm: bool ):
+                 dropout: float):
         super(type(self), self).__init__()
         self.input_dim = input_dim
         self.emb_dim = emb_dim
         self.hid_dim = hid_dim
         self.output_dim = output_dim
-        self.use_batchnorm = use_batchnorm
         self.device = device
         self.use_pos_encoding = use_pos_encoding
         self.n_layers = n_layers
