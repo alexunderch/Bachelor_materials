@@ -143,7 +143,7 @@ class Decoder(nn.Module):
         self.dropout = nn.Dropout(p = dropout)
         self.dropout1 = nn.Dropout(p = dropout)
         self.dropout2 = nn.Dropout(p = dropout)
-        self.norm1 = nn.LayerNorm(emb_dim)
+        self.norm1 = nn.LayerNorm(hid_dim)
     def forward(self, _input, hidden, cell, encoder_outputs):
         
         #input = [batch size]
@@ -181,6 +181,7 @@ class Decoder(nn.Module):
         output, (hidden, cell) = self.rnn(embedded, (hidden, cell)) 
         output =  output + self.dropout2(self.encoder_attention(output.transpose(0, 1), 
                                                                 encoder_outputs.transpose(0, 1)).transpose(0, 1))
+        output = self.norm1(output)
         prediction = self.out(output.squeeze(0))
         
         #prediction = [batch size, output dim]
