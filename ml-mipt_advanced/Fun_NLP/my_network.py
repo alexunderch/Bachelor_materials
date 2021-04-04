@@ -363,6 +363,7 @@ class Decoder_CNN(nn.Module):
             out_features = output_dim)
         
         self.dropout = nn.Dropout(p = dropout)
+        self.dropout1 = nn.Dropout(p = dropout)
         
     def forward(self, _input, hidden, encoder_outputs):
         
