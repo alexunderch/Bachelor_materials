@@ -251,12 +251,12 @@ class Encoder_CNN(nn.Module):
         self.embedding = nn.Embedding(input_dim, emb_dim)
 
         self.s_conv_block = [nn.Conv1d(emb_dim, hid_dim, kernel_size, padding = kernel_size // 2),
-                                          # nn.BatchNorm1d(hid_dim), 
+                                          nn.BatchNorm1d(hid_dim), 
                                           nn.Dropout(dropout),
                                           # nn.AvgPool1d(kernel_size)
                                           ]
         self.c_conv_block = [nn.Conv1d(hid_dim, hid_dim, kernel_size, padding = kernel_size // 2),
-                                          # nn.BatchNorm1d(hid_dim), 
+                                          nn.BatchNorm1d(hid_dim), 
                                           nn.Dropout(dropout)]
         modules = self.s_conv_block
         for _ in range(n_layers - 1): modules.extend(self.c_conv_block)
@@ -285,7 +285,6 @@ class Encoder_CNN(nn.Module):
 
         output = self.flatten(self.ot_pooling(embedded))
         if self.lin_out: output = self.lin_out(output)
-        # print(output.shape)
         return output  
 
 class CNN2Seq(nn.Module):
@@ -320,7 +319,7 @@ class CNN2Seq(nn.Module):
         #last hidden state of the encoder is used as the initial hidden state of the decoder
         enc_output = self.encoder(src).contiguous().repeat(self.decoder.n_layers, 1, 1)
         encoder_outputs = self.encoder(src).contiguous().repeat(self.decoder.n_layers, 1, 1)
-        
+
         
         #first input to the decoder is the <sos> tokens
         _input = trg[0, :]
@@ -350,7 +349,8 @@ class Decoder_CNN(nn.Module):
         self.embedding = nn.Embedding(
             num_embeddings = output_dim,
             embedding_dim = emb_dim)
-        self.encoder_attention = MultiheadAttention(hid_dim,  hid_dim, 8)
+        self.self_attention = MultiheadAttention(emb_dim, emb_dim, 4)
+        self.encoder_attention = MultiheadAttention(hid_dim,  hid_dim, 4)
         self.rnn = nn.GRU(
             input_size = emb_dim,
             hidden_size = hid_dim,
@@ -380,7 +380,9 @@ class Decoder_CNN(nn.Module):
         
         # Compute an embedding from the input data and apply dropout to it
         embedded = self.embedding(_input)
-
+        self_attn_out = self.self_attention(embedded.transpose(0, 1), 
+                                            embedded.transpose(0, 1))
+        embedded = embedded + self.dropout1(self_attn_out.transpose(0, 1)) 
         #embedded = [1, batch size, emb dim]
         
         # Compute the RNN output values of the encoder RNN. 
