@@ -68,7 +68,6 @@ class Encoder(nn.Module):
         self.n_layers = n_layers
         self.dropout = dropout
         
-        ####CNN ENCODER SHOULD BE HERE####
         self.embedding = nn.Embedding(
             num_embeddings = input_dim,
             embedding_dim = emb_dim)
@@ -239,7 +238,7 @@ def positional_encoding(position, d_model, device):
 
 class Encoder_CNN(nn.Module):
     def __init__(self, device, input_dim, emb_dim, hid_dim, output_dim, use_pos_encoding: bool, 
-                 kernel_size: int, stride: int, padding: int, n_layers: int, 
+                 kernel_size: int, padding: int, n_layers: int, 
                  dropout: float):
         super(type(self), self).__init__()
         self.input_dim = input_dim
@@ -252,15 +251,13 @@ class Encoder_CNN(nn.Module):
         self.embedding = nn.Embedding(input_dim, emb_dim)
 
         self.s_conv_block = [nn.Conv1d(emb_dim, hid_dim, kernel_size, padding = kernel_size // 2),
-                                          nn.BatchNorm1d(hid_dim),
+                                          # nn.BatchNorm1d(hid_dim), 
                                           nn.Dropout(dropout),
-                                          # nn.AvgPool1d(kernel_size),
-                                          nn.ReLU()]
+                                          # nn.AvgPool1d(kernel_size)
+                                          ]
         self.c_conv_block = [nn.Conv1d(hid_dim, hid_dim, kernel_size, padding = kernel_size // 2),
-                                          nn.BatchNorm1d(hid_dim),
-                                          nn.Dropout(dropout),
-                                          # nn.AvgPool1d(kernel_size),
-                                          nn.ReLU()]
+                                          # nn.BatchNorm1d(hid_dim), 
+                                          nn.Dropout(dropout)]
         modules = self.s_conv_block
         for _ in range(n_layers - 1): modules.extend(self.c_conv_block)
         self.conv_net = nn.ModuleList(modules)
@@ -283,10 +280,12 @@ class Encoder_CNN(nn.Module):
             embedded = embedded + pos_encoding_emb.permute(1, 0, 2)
 
         embedded = embedded.permute((1, 2, 0))
-        
-        for  layer in self.conv_net: embedded = self.relu(layer(embedded) + embedded)
+        for  layer in self.conv_net: 
+            embedded = self.dropout(self.relu(layer(embedded)))
+
         output = self.flatten(self.ot_pooling(embedded))
         if self.lin_out: output = self.lin_out(output)
+        # print(output.shape)
         return output  
 
 class CNN2Seq(nn.Module):
@@ -297,8 +296,8 @@ class CNN2Seq(nn.Module):
         self.decoder = decoder
         self.device = device
         
-        # assert encoder.hid_dim == decoder.hid_dim, \
-        #     "Hidden dimensions of encoder and decoder must be equal!"
+        assert encoder.hid_dim == decoder.hid_dim, \
+            "Hidden dimensions of encoder and decoder must be equal!"
         # assert encoder.n_layers == decoder.n_layers, \
         #     "Encoder and decoder must have equal number of layers!"
         
@@ -319,17 +318,18 @@ class CNN2Seq(nn.Module):
         outputs = torch.zeros(max_len, batch_size, trg_vocab_size).to(self.device)
         
         #last hidden state of the encoder is used as the initial hidden state of the decoder
-        enc_output = self.encoder(src)
+        enc_output = self.encoder(src).contiguous().repeat(self.decoder.n_layers, 1, 1)
+        encoder_outputs = self.encoder(src).contiguous().repeat(self.decoder.n_layers, 1, 1)
+        
         
         #first input to the decoder is the <sos> tokens
         _input = trg[0, :]
               
         for t in range(1, max_len):
             if t == 1:
-                output, hidden, cell = self.decoder(_input,
-                                            enc_output[:, :self.decoder.n_layers * dec_hid_size].contiguous().view(self.decoder.n_layers, batch_size, dec_hid_size),
-                                            enc_output[:, self.decoder.n_layers * dec_hid_size:].contiguous().view(self.decoder.n_layers, batch_size, dec_hid_size))
-            else: output, hidden, cell = self.decoder(_input, hidden, cell)
+                # output, hidden = self.decoder(_input, enc_output.contiguous().view(self.decoder.n_layers, batch_size, 2 * dec_hid_size))
+                output, hidden = self.decoder(_input, enc_output, encoder_outputs)                      
+            else: output, hidden = self.decoder(_input, hidden, encoder_outputs)
             outputs[t] = output
             teacher_force = random.random() < teacher_forcing_ratio
             top1 = output.max(1)[1]
@@ -337,7 +337,7 @@ class CNN2Seq(nn.Module):
         
         return outputs
 
-class Decoder_(nn.Module):
+class Decoder_CNN(nn.Module):
     def __init__(self, output_dim, emb_dim, hid_dim, n_layers, dropout):
         super().__init__()
 
@@ -348,27 +348,23 @@ class Decoder_(nn.Module):
         self.dropout = dropout
         
         self.embedding = nn.Embedding(
-            num_embeddings=output_dim,
-            embedding_dim=emb_dim
-        )
-            # <YOUR CODE HERE>
-        
-        self.rnn = nn.LSTM(
-            input_size=emb_dim,
-            hidden_size=hid_dim,
-            num_layers=n_layers,
-            dropout=dropout
-        )
-            # <YOUR CODE HERE>
+            num_embeddings = output_dim,
+            embedding_dim = emb_dim)
+        self.encoder_attention = MultiheadAttention(hid_dim,  hid_dim, 8)
+        self.rnn = nn.GRU(
+            input_size = emb_dim,
+            hidden_size = hid_dim,
+            num_layers = n_layers,
+            dropout = dropout)
+
         
         self.out = nn.Linear(
-            in_features=hid_dim,
-            out_features=output_dim
-        )
+            in_features =  hid_dim,
+            out_features = output_dim)
         
-        self.dropout = nn.Dropout(p=dropout)# <YOUR CODE HERE>
+        self.dropout = nn.Dropout(p = dropout)
         
-    def forward(self, input, hidden, cell):
+    def forward(self, _input, hidden, encoder_outputs):
         
         #input = [batch size]
         #hidden = [n layers * n directions, batch size, hid dim]
@@ -378,13 +374,13 @@ class Decoder_(nn.Module):
         #hidden = [n layers, batch size, hid dim]
         #context = [n layers, batch size, hid dim]
         
-        input = input.unsqueeze(0)
+        _input = _input.unsqueeze(0)
         
         #input = [1, batch size]
         
         # Compute an embedding from the input data and apply dropout to it
-        embedded = self.dropout(self.embedding(input))# <YOUR CODE HERE>
-        
+        embedded = self.embedding(_input)
+
         #embedded = [1, batch size, emb dim]
         
         # Compute the RNN output values of the encoder RNN. 
@@ -400,9 +396,11 @@ class Decoder_(nn.Module):
         #cell = [n layers, batch size, hid dim]
         
         
-        output, (hidden, cell) = self.rnn(embedded, (hidden, cell))
+        output, hidden = self.rnn(embedded, hidden)
+        output =  output + self.dropout(self.encoder_attention(output.transpose(0, 1), 
+                                                                encoder_outputs.transpose(0, 1)).transpose(0, 1))
         prediction = self.out(output.squeeze(0))
         
         #prediction = [batch size, output dim]
         
-        return prediction, hidden, cell
+        return prediction, hidden
